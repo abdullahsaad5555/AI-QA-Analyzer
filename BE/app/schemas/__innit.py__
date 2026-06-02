@@ -1,0 +1,51 @@
+# app/schemas/__init__.py
+
+from app.schemas.auth import (
+    SendOTPRequest,
+    SendOTPResponse,
+    VerifyOTPRequest,
+    TokenResponse,
+    AuthUserResponse,
+    VerifyOTPResponse,
+)
+
+from app.schemas.user import UserResponse
+
+from app.schemas.chat import (
+    ChatCreateRequest,
+    ChatUpdateRequest,
+    ChatResponse,
+)
+
+from app.schemas.document import (
+    TextDocumentCreateRequest,
+    DocumentUpdateRequest,
+    DocumentResponse,
+)
+
+from app.schemas.message import (
+    MessageCreateRequest,
+    MessageResponse,
+    SourceReference,
+    AssistantAnswerResponse,
+)
+
+__all__ = [
+    "SendOTPRequest",
+    "SendOTPResponse",
+    "VerifyOTPRequest",
+    "TokenResponse",
+    "AuthUserResponse",
+    "VerifyOTPResponse",
+    "UserResponse",
+    "ChatCreateRequest",
+    "ChatUpdateRequest",
+    "ChatResponse",
+    "TextDocumentCreateRequest",
+    "DocumentUpdateRequest",
+    "DocumentResponse",
+    "MessageCreateRequest",
+    "MessageResponse",
+    "SourceReference",
+    "AssistantAnswerResponse",
+]
