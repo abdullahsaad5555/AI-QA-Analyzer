@@ -1,7 +1,7 @@
 # app/models/__init__.py
 
 from app.models.users import User
-from app.models.otp import EmailOTP
+from app.models.otp_codes import OTPCode
 from app.models.chats import Chat
 from app.models.documents import Document
 from app.models.chunks import DocumentChunk
@@ -9,7 +9,7 @@ from app.models.messages import Message
 
 __all__ = [
     "User",
-    "EmailOTP",
+    "OTPCode",
     "Chat",
     "Document",
     "DocumentChunk",

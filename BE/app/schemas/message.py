@@ -1,5 +1,3 @@
-# app/schemas/message.py
-
 from datetime import datetime
 from typing import Any, Optional
 
@@ -32,5 +30,3 @@ class SourceReference(BaseModel):
 class AssistantAnswerResponse(BaseModel):
     answer: str
     sources: list[SourceReference] = []
-
-

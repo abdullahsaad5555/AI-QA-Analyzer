@@ -1,7 +1,5 @@
 # app/services/chat_service.py
 
-import uuid
-
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +11,7 @@ class ChatService:
     @staticmethod
     async def create_chat(
         db: AsyncSession,
-        user_id: uuid.UUID,
+        user_id: str,
         name: str,
     ) -> Chat:
         chat = Chat(
@@ -28,7 +26,7 @@ class ChatService:
     @staticmethod
     async def list_user_chats(
         db: AsyncSession,
-        user_id: uuid.UUID,
+        user_id: str,
     ) -> list[Chat]:
         result = await db.execute(
             select(Chat)
@@ -40,8 +38,8 @@ class ChatService:
     @staticmethod
     async def get_chat_by_id(
         db: AsyncSession,
-        chat_id: uuid.UUID,
-        user_id: uuid.UUID,
+        chat_id: str,
+        user_id: str,
     ) -> Chat:
         result = await db.execute(
             select(Chat).where(
@@ -62,8 +60,8 @@ class ChatService:
     @staticmethod
     async def update_chat_name(
         db: AsyncSession,
-        chat_id: uuid.UUID,
-        user_id: uuid.UUID,
+        chat_id: str,
+        user_id: str,
         new_name: str,
     ) -> Chat:
         chat = await ChatService.get_chat_by_id(db, chat_id, user_id)
@@ -77,8 +75,8 @@ class ChatService:
     @staticmethod
     async def delete_chat(
         db: AsyncSession,
-        chat_id: uuid.UUID,
-        user_id: uuid.UUID,
+        chat_id: str,
+        user_id: str,
     ) -> None:
         chat = await ChatService.get_chat_by_id(db, chat_id, user_id)
 

@@ -1,6 +1,6 @@
 # app/schemas/auth.py
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class SendOTPRequest(BaseModel):
@@ -23,11 +23,10 @@ class TokenResponse(BaseModel):
 
 
 class AuthUserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     email: EmailStr
-
-    class Config:
-        from_attributes = True
 
 
 class VerifyOTPResponse(BaseModel):

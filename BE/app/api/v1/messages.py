@@ -6,12 +6,12 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
+from app.core.config import settings
 from app.models.users import User
 from app.schemas.message import (
     AssistantAnswerResponse,
     MessageCreateRequest,
     MessageResponse,
-    SourceReference,
 )
 from app.services.message_service import MessageService
 from app.services.rag_service import RAGService
@@ -25,7 +25,7 @@ router = APIRouter(tags=["Messages"])
     status_code=status.HTTP_200_OK,
 )
 async def list_messages(
-    chat_id: uuid.UUID,
+    chat_id: str,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> list[MessageResponse]:
@@ -46,14 +46,15 @@ async def list_messages(
     status_code=status.HTTP_200_OK,
 )
 async def send_message(
-    chat_id: uuid.UUID,
+    chat_id: str,
     payload: MessageCreateRequest,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> AssistantAnswerResponse:
     """
-    Save the user's message, generate a RAG-based answer,
-    save the assistant response, and return answer + sources.
+    Save the user's message and return either:
+    - a static local development response, or
+    - a RAG-based response when static mode is disabled.
     """
     # 1) Save user's message
     await MessageService.create_user_message(
@@ -63,19 +64,26 @@ async def send_message(
         content=payload.content,
     )
 
-    # 2) Generate grounded answer from RAG pipeline
-    rag_result = await RAGService.answer_question(
-        db=db,
-        chat_id=chat_id,
-        user_id=current_user.id,
-        question=payload.content,
-        top_k=5,
-    )
+    # 2) Local dev static response mode
+    if settings.ENABLE_STATIC_CHAT_RESPONSES:
+        assistant_text = (
+            f"{settings.STATIC_CHAT_RESPONSE_TEXT}\n\n"
+            f"Question received: {payload.content}"
+        )
+        sources = []
+    else:
+        # 3) Real RAG flow
+        rag_result = await RAGService.answer_question(
+            db=db,
+            chat_id=chat_id,
+            user_id=current_user.id,
+            question=payload.content,
+            top_k=5,
+        )
+        assistant_text = rag_result["answer"]
+        sources = rag_result["sources"]
 
-    assistant_text = rag_result["answer"]
-    sources = rag_result["sources"]
-
-    # 3) Save assistant message in chat history
+    # 4) Save assistant message
     await MessageService.create_assistant_message(
         db=db,
         chat_id=chat_id,
@@ -83,8 +91,8 @@ async def send_message(
         content=assistant_text,
     )
 
-    # 4) Return answer + sources
+    # 5) Return response
     return AssistantAnswerResponse(
         answer=assistant_text,
-        sources=[SourceReference(**source) for source in sources],
+        sources=sources,
     )

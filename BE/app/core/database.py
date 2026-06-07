@@ -2,16 +2,21 @@
 
 from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import declarative_base
 
 from app.core.config import settings
 
 
+Base = declarative_base()
+
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=True,  # set to False in production if you don't want SQL logs
-    future=True,
+    echo=False,
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -20,33 +25,34 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
-Base = declarative_base()
-
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    FastAPI dependency that provides a DB session.
+    Backward-compatible DB dependency used by app/api/deps.py
     """
     async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+        yield session
+
+
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Cleaner alias for route files that import get_db_session directly.
+    """
+    async for session in get_db():
+        yield session
 
 
 async def init_db() -> None:
     """
-    Create all tables.
-    Useful for local development before adding Alembic migrations.
+    Create database tables on startup for local development.
     """
-    from app.models import (  # noqa: F401
-        User,
-        EmailOTP,
-        Chat,
-        Document,
-        DocumentChunk,
-        Message,
-    )
+    # Import all models explicitly so SQLAlchemy metadata is populated
+    from app.models.users import User  # noqa: F401
+    from app.models.otp import OTPCode  # noqa: F401
+    from app.models.chats import Chat  # noqa: F401
+    from app.models.documents import Document  # noqa: F401
+    from app.models.chunks import DocumentChunk  # noqa: F401
+    from app.models.messages import Message  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

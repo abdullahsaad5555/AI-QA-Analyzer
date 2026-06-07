@@ -11,8 +11,6 @@ from app.models.messages import Message
 
 
 class MessageService:
-    ALLOWED_ROLES = {"user", "assistant", "system"}
-
     @staticmethod
     async def _get_owned_chat(
         db: AsyncSession,
@@ -51,24 +49,11 @@ class MessageService:
         """
         await MessageService._get_owned_chat(db, chat_id, user_id)
 
-        cleaned_content = (content or "").strip()
-        if not cleaned_content:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Message content cannot be empty",
-            )
-
-        if role not in MessageService.ALLOWED_ROLES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid message role",
-            )
-
         message = Message(
             chat_id=chat_id,
             user_id=user_id,
             role=role,
-            content=cleaned_content,
+            content=content.strip(),
         )
 
         db.add(message)
@@ -83,6 +68,9 @@ class MessageService:
         user_id: uuid.UUID,
         content: str,
     ) -> Message:
+        """
+        Convenience method for creating a user message.
+        """
         return await MessageService.create_message(
             db=db,
             chat_id=chat_id,
@@ -98,6 +86,11 @@ class MessageService:
         user_id: uuid.UUID,
         content: str,
     ) -> Message:
+        """
+        Convenience method for creating an assistant message.
+        Note:
+        The assistant response is stored in the same user's chat history.
+        """
         return await MessageService.create_message(
             db=db,
             chat_id=chat_id,

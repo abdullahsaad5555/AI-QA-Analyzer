@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatCreateRequest(BaseModel):
@@ -14,11 +14,10 @@ class ChatUpdateRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     user_id: str
     name: str
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True

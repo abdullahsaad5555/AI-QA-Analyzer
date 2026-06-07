@@ -3,11 +3,15 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TextDocumentCreateRequest(BaseModel):
-    raw_text: str = Field(..., min_length=1, example="This is the text I want to upload.")
+    raw_text: str = Field(
+        ...,
+        min_length=1,
+        example="This is the text I want to upload.",
+    )
     file_name: Optional[str] = Field(default=None, example="notes.txt")
 
 
@@ -19,6 +23,8 @@ class DocumentUpdateRequest(BaseModel):
 
 
 class DocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     chat_id: str
     user_id: str
@@ -31,6 +37,3 @@ class DocumentResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True

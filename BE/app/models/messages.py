@@ -4,28 +4,40 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
 from app.core.config import settings
 
 
+def _fk_target(table_name: str, column_name: str = "id") -> str:
+    """
+    Build a ForeignKey target that works for both:
+    - PostgreSQL with schema: public.chats.id
+    - SQLite/local dev without schema: chats.id
+    """
+    return (
+        f"{settings.DB_SCHEMA}.{table_name}.{column_name}"
+        if settings.DB_SCHEMA
+        else f"{table_name}.{column_name}"
+    )
+
+
 class Message(Base):
     __tablename__ = "messages"
-    __table_args__ = {"schema": settings.DB_SCHEMA}
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
     chat_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey(f"{settings.DB_SCHEMA}.chats.id", ondelete="CASCADE"),
+        String,
+        ForeignKey(_fk_target("chats"), ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     user_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="CASCADE"),
+        String,
+        ForeignKey(_fk_target("users"), ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

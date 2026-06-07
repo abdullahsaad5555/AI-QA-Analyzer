@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     OTP_MAX_ATTEMPTS: int = 5
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: List[str] = ["http://localhost:5173"]
 
     # File / chunking
     MAX_UPLOAD_SIZE_MB: int = 20
@@ -47,6 +47,14 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+    # Local dev chatbot mode
+    ENABLE_STATIC_CHAT_RESPONSES: bool = True
+    STATIC_CHAT_RESPONSE_TEXT: str = (
+    "This is a local development placeholder response. "
+    "Your question was received successfully, but RAG/LLM generation is "
+    "currently disabled in local mode."
+)
+
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

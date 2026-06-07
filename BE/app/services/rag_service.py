@@ -84,7 +84,6 @@ class RAGService:
     ) -> list[dict[str, Any]]:
         """
         Load documents for a chat and split them into chunk dictionaries.
-
         Each returned chunk includes document-level metadata.
         """
         documents = await RAGService._load_chat_documents(db, chat_id, user_id)
@@ -134,7 +133,6 @@ class RAGService:
     ) -> list[dict[str, Any]]:
         """
         Retrieve the top-k most relevant chunks for the query.
-
         Uses the placeholder EmbeddingService for now.
         """
         if not query or not query.strip():
@@ -173,7 +171,6 @@ class RAGService:
     ) -> str:
         """
         Build a simple grounded answer from retrieved chunks.
-
         This is a placeholder answer builder until a real LLM is connected.
         """
         if not chunks:

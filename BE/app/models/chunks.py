@@ -3,29 +3,51 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, Text, DateTime, Boolean, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import (
+    Column,
+    Integer,
+    Text,
+    DateTime,
+    Boolean,
+    ForeignKey,
+    JSON,
+    String,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.database import Base
 from app.core.config import settings
 
 
+def _fk_target(table_name: str, column_name: str = "id") -> str:
+    """
+    Build a ForeignKey target that works for both:
+    - PostgreSQL with schema: public.documents.id
+    - SQLite/local dev without schema: documents.id
+    """
+    return (
+        f"{settings.DB_SCHEMA}.{table_name}.{column_name}"
+        if settings.DB_SCHEMA
+        else f"{table_name}.{column_name}"
+    )
+
+
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
-    __table_args__ = {"schema": settings.DB_SCHEMA}
+    __table_args__ = {"schema": settings.DB_SCHEMA} if settings.DB_SCHEMA else {}
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
     document_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey(f"{settings.DB_SCHEMA}.documents.id", ondelete="CASCADE"),
+        String,
+        ForeignKey(_fk_target("documents"), ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     chat_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey(f"{settings.DB_SCHEMA}.chats.id", ondelete="CASCADE"),
+        String,
+        ForeignKey(_fk_target("chats"), ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -39,9 +61,10 @@ class DocumentChunk(Base):
     # If your vector DB is separate, store a reference here
     embedding_id = Column(Text, nullable=True)
 
-    # Flexible storage for extra metadata:
-    # e.g. file_name, page_number, source_type, version, etc.
-    metadata_json = Column(JSONB, nullable=True)
+    # Portable JSON column:
+    # - JSON for SQLite/other DBs
+    # - JSONB for PostgreSQL
+    metadata_json = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=True)
 
     # Useful when re-indexing a document and deactivating old chunks
     is_active = Column(Boolean, default=True, nullable=False, index=True)

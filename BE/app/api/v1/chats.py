@@ -1,7 +1,5 @@
 # app/api/v1/chats.py
 
-import uuid
-
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,7 +61,7 @@ async def create_chat(
     status_code=status.HTTP_200_OK,
 )
 async def get_chat(
-    chat_id: uuid.UUID,
+    chat_id: str,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -84,7 +82,7 @@ async def get_chat(
     status_code=status.HTTP_200_OK,
 )
 async def update_chat(
-    chat_id: uuid.UUID,
+    chat_id: str,
     payload: ChatUpdateRequest,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
@@ -106,7 +104,7 @@ async def update_chat(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_chat(
-    chat_id: uuid.UUID,
+    chat_id: str,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
