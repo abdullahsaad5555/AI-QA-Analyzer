@@ -1,0 +1,43 @@
+.card {
+    background: #111827;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.sectionTitle {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 20px;
+    color: #ffffff;
+}
+
+.retryCard {
+    margin-top: 14px;
+    margin-bottom: 4px;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid #f59e0b;
+    background: #3f2a0a;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.retryText {
+    color: #fde68a;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.retryButton {
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: none;
+    background: #f59e0b;
+    color: #111827;
+    cursor: pointer;
+    font-weight: 700;
+}

@@ -1,8 +1,6 @@
-# app/api/v1/messages.py
+import asyncio
 
-import uuid
-
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
@@ -29,9 +27,6 @@ async def list_messages(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> list[MessageResponse]:
-    """
-    List all messages for a chat owned by the authenticated user.
-    """
     messages = await MessageService.list_chat_messages(
         db=db,
         chat_id=chat_id,
@@ -46,16 +41,12 @@ async def list_messages(
     status_code=status.HTTP_200_OK,
 )
 async def send_message(
+    request: Request,
     chat_id: str,
     payload: MessageCreateRequest,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> AssistantAnswerResponse:
-    """
-    Save the user's message and return either:
-    - a static local development response, or
-    - a RAG-based response when static mode is disabled.
-    """
     # 1) Save user's message
     await MessageService.create_user_message(
         db=db,
@@ -64,7 +55,14 @@ async def send_message(
         content=payload.content,
     )
 
-    # 2) Local dev static response mode
+    # 2) Artificial delay so frontend can show "Thinking..."
+    await asyncio.sleep(3)
+
+    # Best-effort early exit if client already disconnected
+    if await request.is_disconnected():
+        return AssistantAnswerResponse(answer="", sources=[])
+
+    # 3) Local dev static response mode
     if settings.ENABLE_STATIC_CHAT_RESPONSES:
         assistant_text = (
             f"{settings.STATIC_CHAT_RESPONSE_TEXT}\n\n"
@@ -72,7 +70,7 @@ async def send_message(
         )
         sources = []
     else:
-        # 3) Real RAG flow
+        # 4) Real RAG flow
         rag_result = await RAGService.answer_question(
             db=db,
             chat_id=chat_id,
@@ -83,7 +81,11 @@ async def send_message(
         assistant_text = rag_result["answer"]
         sources = rag_result["sources"]
 
-    # 4) Save assistant message
+    # Best-effort exit after RAG returns but before saving assistant reply
+    if await request.is_disconnected():
+        return AssistantAnswerResponse(answer="", sources=[])
+
+    # 5) Save assistant message
     await MessageService.create_assistant_message(
         db=db,
         chat_id=chat_id,
@@ -91,7 +93,7 @@ async def send_message(
         content=assistant_text,
     )
 
-    # 5) Return response
+    # 6) Return response
     return AssistantAnswerResponse(
         answer=assistant_text,
         sources=sources,

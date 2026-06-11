@@ -1,17 +1,27 @@
-import { useEffect, useState } from "react";
-import { createChat, deleteChat, listChats } from "../api/chats";
-import ChatDetailPage from "./ChatDetailPage";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+    createChat,
+    deleteChat,
+    listChats,
+    updateChat,
+} from "../api/chats";
 import AppShell from "../component/layout/AppShell";
 
 export default function ChatsPage() {
-    const [chats, setChats] = useState([]);
-    const [selectedChat, setSelectedChat] = useState(null);
+    const navigate = useNavigate();
 
+    const [chats, setChats] = useState([]);
+    const [searchTerm, setSearchTerm] = useState("");
     const [newChatName, setNewChatName] = useState("");
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
     const [deletingId, setDeletingId] = useState(null);
+    const [renamingId, setRenamingId] = useState(null);
+    const [editingChatId, setEditingChatId] = useState(null);
+    const [editingName, setEditingName] = useState("");
     const [error, setError] = useState("");
+    const [chatNameNotice, setChatNameNotice] = useState("");
 
     async function loadChats() {
         setLoading(true);
@@ -31,17 +41,38 @@ export default function ChatsPage() {
         loadChats();
     }, []);
 
+    function handleNewChatNameChange(e) {
+        setNewChatName(e.target.value);
+
+        if (chatNameNotice) {
+            setChatNameNotice("");
+        }
+    }
+
     async function handleCreateChat(e) {
         e.preventDefault();
 
-        if (!newChatName.trim()) return;
+        if (creating) return;
+
+        const trimmedName = newChatName.trim();
+
+        if (!trimmedName) {
+            setChatNameNotice("Please enter a chat name");
+
+            window.setTimeout(() => {
+                setChatNameNotice("");
+            }, 2200);
+
+            return;
+        }
 
         setCreating(true);
         setError("");
+        setChatNameNotice("");
 
         try {
             const created = await createChat({
-                name: newChatName.trim(),
+                name: trimmedName,
             });
 
             setChats((prev) => [created, ...prev]);
@@ -54,6 +85,8 @@ export default function ChatsPage() {
     }
 
     async function handleDeleteChat(chatId) {
+        if (deletingId === chatId || renamingId || creating) return;
+
         const confirmed = window.confirm("Delete this chat?");
         if (!confirmed) return;
 
@@ -64,8 +97,9 @@ export default function ChatsPage() {
             await deleteChat(chatId);
             setChats((prev) => prev.filter((chat) => chat.id !== chatId));
 
-            if (selectedChat?.id === chatId) {
-                setSelectedChat(null);
+            if (editingChatId === chatId) {
+                setEditingChatId(null);
+                setEditingName("");
             }
         } catch (err) {
             setError(err?.response?.data?.detail || "Failed to delete chat");
@@ -75,16 +109,60 @@ export default function ChatsPage() {
     }
 
     function handleOpenChat(chat) {
-        setSelectedChat(chat);
+        if (creating || deletingId || renamingId) return;
+        navigate(`/chats/${chat.id}`);
     }
 
-    function handleBackToChats() {
-        setSelectedChat(null);
+    function handleStartRename(chat) {
+        if (creating || deletingId || renamingId) return;
+
+        setEditingChatId(chat.id);
+        setEditingName(chat.name || chat.title || "");
+        setError("");
     }
 
-    if (selectedChat) {
-        return <ChatDetailPage chat={selectedChat} onBack={handleBackToChats} />;
+    function handleCancelRename() {
+        if (renamingId) return;
+
+        setEditingChatId(null);
+        setEditingName("");
     }
+
+    async function handleSaveRename(chatId) {
+        if (renamingId === chatId || deletingId || creating) return;
+
+        const trimmedName = editingName.trim();
+        if (!trimmedName) return;
+
+        setRenamingId(chatId);
+        setError("");
+
+        try {
+            const updated = await updateChat(chatId, { name: trimmedName });
+
+            setChats((prev) =>
+                prev.map((chat) => (chat.id === chatId ? updated : chat))
+            );
+
+            setEditingChatId(null);
+            setEditingName("");
+        } catch (err) {
+            setError(err?.response?.data?.detail || "Failed to rename chat");
+        } finally {
+            setRenamingId(null);
+        }
+    }
+
+    const filteredChats = useMemo(() => {
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+
+        if (!normalizedSearch) return chats;
+
+        return chats.filter((chat) => {
+            const name = (chat.name || chat.title || "").toLowerCase();
+            return name.includes(normalizedSearch);
+        });
+    }, [chats, searchTerm]);
 
     return (
         <AppShell
@@ -102,63 +180,161 @@ export default function ChatsPage() {
 
                     {error ? <div style={styles.error}>{error}</div> : null}
 
+                    {chatNameNotice ? (
+                        <div
+                            style={{
+                                marginBottom: "12px",
+                                padding: "10px 12px",
+                                borderRadius: "10px",
+                                background: "#78350f",
+                                border: "1px solid #f59e0b",
+                                color: "#fef3c7",
+                                fontSize: "14px",
+                                fontWeight: "600",
+                            }}
+                        >
+                            {chatNameNotice}
+                        </div>
+                    ) : null}
+
                     <form onSubmit={handleCreateChat} style={styles.form}>
                         <input
                             type="text"
                             placeholder="Enter chat name"
                             value={newChatName}
-                            onChange={(e) => setNewChatName(e.target.value)}
+                            onChange={handleNewChatNameChange}
                             style={styles.input}
+                            disabled={creating}
                         />
-                        <button type="submit" disabled={creating} style={styles.primaryButton}>
+                        <button
+                            type="submit"
+                            disabled={creating}
+                            style={styles.primaryButton}
+                        >
                             {creating ? "Creating..." : "Create Chat"}
                         </button>
                     </form>
+
+                    <div style={{ marginBottom: "16px" }}>
+                        <input
+                            type="text"
+                            placeholder="Search chats..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={styles.input}
+                        />
+                    </div>
 
                     <div style={styles.card}>
                         {loading ? (
                             <p style={styles.muted}>Loading chats...</p>
                         ) : chats.length === 0 ? (
                             <p style={styles.muted}>No chats found yet.</p>
+                        ) : filteredChats.length === 0 ? (
+                            <p style={styles.muted}>No chats match your search.</p>
                         ) : (
                             <div style={styles.list}>
-                                {chats.map((chat) => (
-                                    <div key={chat.id} style={styles.chatItem}>
-                                        <div style={styles.chatContent}>
-                                            <div style={styles.chatName}>
-                                                {chat.name || chat.title || "Untitled Chat"}
+                                {filteredChats.map((chat) => {
+                                    const isEditing = editingChatId === chat.id;
+                                    const isRenaming = renamingId === chat.id;
+                                    const isDeleting = deletingId === chat.id;
+                                    const isBusy =
+                                        creating ||
+                                        isRenaming ||
+                                        isDeleting ||
+                                        Boolean(deletingId) ||
+                                        Boolean(renamingId);
+
+                                    return (
+                                        <div key={chat.id} style={styles.chatItem}>
+                                            <div style={styles.chatContent}>
+                                                {isEditing ? (
+                                                    <div style={styles.renameRow}>
+                                                        <input
+                                                            type="text"
+                                                            value={editingName}
+                                                            onChange={(e) => setEditingName(e.target.value)}
+                                                            style={styles.renameInput}
+                                                            autoFocus
+                                                            disabled={isRenaming}
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <div style={styles.chatName}>
+                                                        {chat.name || chat.title || "Untitled Chat"}
+                                                    </div>
+                                                )}
+
+                                                <div style={styles.chatMeta}>
+                                                    <span>ID: {chat.id}</span>
+                                                    {chat.created_at ? (
+                                                        <span>
+                                                            Created: {new Date(chat.created_at).toLocaleString()}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
                                             </div>
 
-                                            <div style={styles.chatMeta}>
-                                                <span>ID: {chat.id}</span>
-                                                {chat.created_at ? (
-                                                    <span>
-                                                        Created: {new Date(chat.created_at).toLocaleString()}
-                                                    </span>
-                                                ) : null}
+                                            <div style={styles.actions}>
+                                                {isEditing ? (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            style={styles.primarySmallButton}
+                                                            onClick={() => handleSaveRename(chat.id)}
+                                                            disabled={
+                                                                isRenaming ||
+                                                                !editingName.trim() ||
+                                                                Boolean(deletingId) ||
+                                                                creating
+                                                            }
+                                                        >
+                                                            {isRenaming ? "Saving..." : "Save"}
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
+                                                            style={styles.secondaryButton}
+                                                            onClick={handleCancelRename}
+                                                            disabled={isRenaming}
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            style={styles.secondaryButton}
+                                                            onClick={() => handleOpenChat(chat)}
+                                                            disabled={isBusy}
+                                                        >
+                                                            Open
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
+                                                            style={styles.secondaryButton}
+                                                            onClick={() => handleStartRename(chat)}
+                                                            disabled={isBusy}
+                                                        >
+                                                            Rename
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
+                                                            style={styles.dangerButton}
+                                                            onClick={() => handleDeleteChat(chat.id)}
+                                                            disabled={isDeleting || creating || Boolean(renamingId)}
+                                                        >
+                                                            {isDeleting ? "Deleting..." : "Delete"}
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
-
-                                        <div style={styles.actions}>
-                                            <button
-                                                type="button"
-                                                style={styles.secondaryButton}
-                                                onClick={() => handleOpenChat(chat)}
-                                            >
-                                                Open
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                style={styles.dangerButton}
-                                                onClick={() => handleDeleteChat(chat.id)}
-                                                disabled={deletingId === chat.id}
-                                            >
-                                                {deletingId === chat.id ? "Deleting..." : "Delete"}
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -207,8 +383,28 @@ const styles = {
         color: "#ffffff",
         outline: "none",
     },
+    renameInput: {
+        width: "100%",
+        padding: "10px 12px",
+        borderRadius: "10px",
+        border: "1px solid #4b5563",
+        background: "#111827",
+        color: "#ffffff",
+        outline: "none",
+        fontSize: "16px",
+        fontWeight: "600",
+    },
     primaryButton: {
         padding: "12px 16px",
+        borderRadius: "10px",
+        border: "none",
+        background: "#2563eb",
+        color: "#ffffff",
+        cursor: "pointer",
+        fontWeight: "600",
+    },
+    primarySmallButton: {
+        padding: "10px 14px",
         borderRadius: "10px",
         border: "none",
         background: "#2563eb",
@@ -264,6 +460,9 @@ const styles = {
         fontWeight: "600",
         marginBottom: "8px",
     },
+    renameRow: {
+        marginBottom: "8px",
+    },
     chatMeta: {
         display: "flex",
         flexDirection: "column",
@@ -276,6 +475,7 @@ const styles = {
         display: "flex",
         gap: "10px",
         alignItems: "center",
+        flexWrap: "wrap",
     },
     muted: {
         color: "#9ca3af",

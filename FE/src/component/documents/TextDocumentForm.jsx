@@ -7,7 +7,7 @@ export default function TextDocumentForm({
     creating = false,
 }) {
     return (
-        <form onSubmit={onSubmit} style={styles.form}>
+        <form onSubmit={onSubmit} style={styles.form} id='form'>
             <input
                 type="text"
                 value={fileName}

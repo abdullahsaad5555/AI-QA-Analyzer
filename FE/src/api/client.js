@@ -20,4 +20,22 @@ api.interceptors.request.use(
     (error) => Promise.reject(error)
 );
 
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        const status = error?.response?.status;
+
+        if (status === 401) {
+            sessionStorage.setItem(
+                "auth_redirect_message",
+                "Session expired. Please log in again."
+            );
+
+            window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+        }
+
+        return Promise.reject(error);
+    }
+);
+
 export default api;

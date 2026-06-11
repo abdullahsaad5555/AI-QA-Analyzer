@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { sendOtp, verifyOtp } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
     const { login } = useAuth();
+
+    const otpInputRef = useRef(null);
 
     const [step, setStep] = useState("email");
     const [email, setEmail] = useState("");
@@ -11,12 +13,57 @@ export default function LoginPage() {
 
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
+    const [sessionNotice, setSessionNotice] = useState("");
     const [error, setError] = useState("");
+
+    useEffect(() => {
+        const redirectMessage = sessionStorage.getItem("auth_redirect_message");
+
+        if (redirectMessage) {
+            setSessionNotice(redirectMessage);
+            sessionStorage.removeItem("auth_redirect_message");
+        }
+    }, []);
+
+    useEffect(() => {
+        if (step === "otp") {
+            otpInputRef.current?.focus();
+        }
+    }, [step]);
+
+    useEffect(() => {
+        if (!message) return;
+
+        const timeout = window.setTimeout(() => {
+            setMessage("");
+        }, 2500);
+
+        return () => window.clearTimeout(timeout);
+    }, [message]);
+
+    function resetFeedback() {
+        setMessage("");
+        setError("");
+    }
+
+    function handleEmailChange(e) {
+        setEmail(e.target.value);
+        setError("");
+    }
+
+    function handleOtpChange(e) {
+        setOtp(e.target.value);
+        setError("");
+    }
 
     async function handleSendOtp(e) {
         e.preventDefault();
+
+        if (loading) return;
+
         setLoading(true);
         setMessage("");
+        setSessionNotice("");
         setError("");
 
         try {
@@ -32,8 +79,12 @@ export default function LoginPage() {
 
     async function handleVerifyOtp(e) {
         e.preventDefault();
+
+        if (loading) return;
+
         setLoading(true);
         setMessage("");
+        setSessionNotice("");
         setError("");
 
         try {
@@ -54,8 +105,29 @@ export default function LoginPage() {
                 <h1 style={styles.title}>AI QA Analyzer</h1>
                 <p style={styles.subtitle}>Login with email OTP</p>
 
-                {message ? <div style={styles.success}>{message}</div> : null}
-                {error ? <div style={styles.error}>{error}</div> : null}
+                {sessionNotice ? (
+                    <Banner
+                        text={sessionNotice}
+                        style={styles.sessionNotice}
+                        onDismiss={() => setSessionNotice("")}
+                    />
+                ) : null}
+
+                {message ? (
+                    <Banner
+                        text={message}
+                        style={styles.success}
+                        onDismiss={() => setMessage("")}
+                    />
+                ) : null}
+
+                {error ? (
+                    <Banner
+                        text={error}
+                        style={styles.error}
+                        onDismiss={() => setError("")}
+                    />
+                ) : null}
 
                 {step === "email" ? (
                     <form onSubmit={handleSendOtp} style={styles.form}>
@@ -63,13 +135,18 @@ export default function LoginPage() {
                         <input
                             type="email"
                             value={email}
-                            onChange={(e) => setEmail(e.target.value)}
+                            onChange={handleEmailChange}
                             placeholder="test@example.com"
                             required
+                            disabled={loading}
                             style={styles.input}
                         />
 
-                        <button type="submit" disabled={loading} style={styles.button}>
+                        <button
+                            type="submit"
+                            disabled={loading || !email.trim()}
+                            style={styles.button}
+                        >
                             {loading ? "Sending..." : "Send OTP"}
                         </button>
                     </form>
@@ -80,15 +157,25 @@ export default function LoginPage() {
 
                         <label style={styles.label}>OTP</label>
                         <input
+                            ref={otpInputRef}
                             type="text"
                             value={otp}
-                            onChange={(e) => setOtp(e.target.value)}
-                            placeholder="Enter OTP from backend console"
+                            onChange={handleOtpChange}
+                            placeholder="Enter OTP sent on email"
                             required
+                            disabled={loading}
                             style={styles.input}
                         />
 
-                        <button type="submit" disabled={loading} style={styles.button}>
+                        <p style={styles.helperText}>
+                            Enter the OTP sent to your email.
+                        </p>
+
+                        <button
+                            type="submit"
+                            disabled={loading || !otp.trim()}
+                            style={styles.button}
+                        >
                             {loading ? "Verifying..." : "Verify OTP"}
                         </button>
 
@@ -97,9 +184,10 @@ export default function LoginPage() {
                             onClick={() => {
                                 setStep("email");
                                 setOtp("");
-                                setMessage("");
-                                setError("");
+                                resetFeedback();
+                                setSessionNotice("");
                             }}
+                            disabled={loading}
                             style={styles.secondaryButton}
                         >
                             Back
@@ -107,6 +195,17 @@ export default function LoginPage() {
                     </form>
                 )}
             </div>
+        </div>
+    );
+}
+
+function Banner({ text, style, onDismiss }) {
+    return (
+        <div style={style}>
+            <span>{text}</span>
+            <button type="button" onClick={onDismiss} style={styles.bannerClose}>
+                ×
+            </button>
         </div>
     );
 }
@@ -156,6 +255,12 @@ const styles = {
         color: "#ffffff",
         outline: "none",
     },
+    helperText: {
+        margin: 0,
+        fontSize: "12px",
+        lineHeight: 1.5,
+        color: "#9ca3af",
+    },
     button: {
         marginTop: "8px",
         padding: "12px",
@@ -176,18 +281,49 @@ const styles = {
     },
     success: {
         marginBottom: "12px",
-        padding: "10px",
+        padding: "10px 12px",
         borderRadius: "10px",
         background: "#064e3b",
         color: "#d1fae5",
         fontSize: "14px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
+    },
+    sessionNotice: {
+        marginBottom: "12px",
+        padding: "10px 12px",
+        borderRadius: "10px",
+        background: "#3b0764",
+        border: "1px solid #8b5cf6",
+        color: "#ede9fe",
+        fontSize: "14px",
+        fontWeight: "600",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
     },
     error: {
         marginBottom: "12px",
-        padding: "10px",
+        padding: "10px 12px",
         borderRadius: "10px",
         background: "#7f1d1d",
         color: "#fee2e2",
         fontSize: "14px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
+    },
+    bannerClose: {
+        border: "none",
+        background: "transparent",
+        color: "inherit",
+        cursor: "pointer",
+        fontSize: "18px",
+        lineHeight: 1,
+        padding: 0,
     },
 };

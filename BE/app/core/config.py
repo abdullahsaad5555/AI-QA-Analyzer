@@ -1,5 +1,3 @@
-# app/core/config.py
-
 from functools import lru_cache
 from typing import List
 
@@ -28,6 +26,15 @@ class Settings(BaseSettings):
     OTP_LENGTH: int = 6
     OTP_MAX_ATTEMPTS: int = 5
 
+    # SMTP
+    SMTP_HOST: str
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str
+    SMTP_PASSWORD: str
+    SMTP_FROM_EMAIL: str
+    SMTP_FROM_NAME: str = "AI QA Analyzer"
+    SMTP_STARTTLS: bool = True
+
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:5173"]
 
@@ -41,20 +48,20 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-large"
     VECTOR_DB_PROVIDER: str = "pgvector"
 
+    # Local dev chatbot mode
+    ENABLE_STATIC_CHAT_RESPONSES: bool = True
+    STATIC_CHAT_RESPONSE_TEXT: str = (
+        "This is a local development placeholder response. "
+        "Your question was received successfully, but RAG/LLM generation is "
+        "currently disabled in local mode."
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
     )
-    # Local dev chatbot mode
-    ENABLE_STATIC_CHAT_RESPONSES: bool = True
-    STATIC_CHAT_RESPONSE_TEXT: str = (
-    "This is a local development placeholder response. "
-    "Your question was received successfully, but RAG/LLM generation is "
-    "currently disabled in local mode."
-)
-
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

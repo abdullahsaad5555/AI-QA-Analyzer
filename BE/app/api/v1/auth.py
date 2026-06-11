@@ -1,6 +1,4 @@
-# app/api/v1/auth.py
-
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
@@ -11,6 +9,10 @@ from app.schemas.auth import (
     VerifyOTPResponse,
 )
 from app.services.auth_service import AuthService
+from app.services.mail_service import send_otp_email
+
+# Shared limiter instance (see small companion file below)
+from app.core.rate_limit import limiter
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -20,21 +22,16 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
     response_model=SendOTPResponse,
     status_code=status.HTTP_200_OK,
 )
+@limiter.limit("3/minute")
 async def send_otp(
+    request: Request,
     payload: SendOTPRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db_session),
 ):
-    """
-    Generate an OTP for the provided email and store its hash in the database.
-
-    NOTE:
-    Replace the temporary print() statement with a real email provider
-    (SMTP, Resend, SendGrid, SES, etc.) before production use.
-    """
     otp = await AuthService.create_otp(db, payload.email)
 
-    # TEMPORARY for local development/testing only
-    print(f"[DEV OTP] Email: {payload.email} | OTP: {otp}")
+    background_tasks.add_task(send_otp_email, payload.email, otp)
 
     return SendOTPResponse(message="OTP sent successfully")
 
@@ -44,14 +41,12 @@ async def send_otp(
     response_model=VerifyOTPResponse,
     status_code=status.HTTP_200_OK,
 )
+@limiter.limit("10/minute")
 async def verify_otp(
+    request: Request,
     payload: VerifyOTPRequest,
     db: AsyncSession = Depends(get_db_session),
 ):
-    """
-    Verify the submitted OTP, create the user if needed,
-    and return access + refresh tokens.
-    """
     result = await AuthService.verify_email_otp(
         db=db,
         email=payload.email,

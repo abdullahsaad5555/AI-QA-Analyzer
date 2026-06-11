@@ -4,11 +4,22 @@ export default function MessageComposer({
     onSubmit,
     sending = false,
 }) {
+    function handleKeyDown(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+
+            if (!sending && value.trim()) {
+                onSubmit(e);
+            }
+        }
+    }
+
     return (
         <form onSubmit={onSubmit} style={styles.form}>
             <textarea
                 value={value}
                 onChange={onChange}
+                onKeyDown={handleKeyDown}
                 placeholder="Type your message..."
                 rows={4}
                 style={styles.textarea}

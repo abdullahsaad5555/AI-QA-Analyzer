@@ -36,6 +36,23 @@ export function AuthProvider({ children }) {
         setUser(null);
     };
 
+    useEffect(() => {
+        function handleUnauthorized() {
+            setToken(null);
+            setUser(null);
+
+            if (window.location.pathname !== "/login") {
+                window.location.replace("/login");
+            }
+        }
+
+        window.addEventListener("auth:unauthorized", handleUnauthorized);
+
+        return () => {
+            window.removeEventListener("auth:unauthorized", handleUnauthorized);
+        };
+    }, []);
+
     const value = useMemo(
         () => ({
             token,
