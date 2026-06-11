@@ -2,6 +2,7 @@
 
 import math
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -62,7 +63,7 @@ class RAGService:
         db: AsyncSession,
         chat_id: uuid.UUID,
         user_id: uuid.UUID,
-    ) -> list[Document]:
+    ) -> list:
         """
         Load all documents for a chat owned by the current user.
         """
@@ -242,6 +243,63 @@ class RAGService:
         ]
 
         return {
+            "answer": answer,
+            "sources": sources,
+        }
+
+    @staticmethod
+    async def stream_answer_question(
+        db: AsyncSession,
+        chat_id: uuid.UUID,
+        user_id: uuid.UUID,
+        question: str,
+        top_k: int = 5,
+        chunk_size: int = 40,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """
+        Streaming-friendly helper.
+
+        Current behavior:
+        - retrieves relevant chunks
+        - builds the full answer
+        - yields it gradually in small pieces
+
+        This does NOT yet stream token-by-token from an LLM.
+        It only streams the final built answer in chunks.
+        """
+        retrieved_chunks = await RAGService.retrieve_relevant_chunks(
+            db=db,
+            chat_id=chat_id,
+            user_id=user_id,
+            query=question,
+            top_k=top_k,
+        )
+
+        answer = RAGService._build_answer_from_chunks(question, retrieved_chunks)
+
+        sources = [
+            {
+                "document_id": chunk["document_id"],
+                "chunk_id": None,  # not persisted yet in document_chunks table
+                "file_name": chunk.get("file_name"),
+                "metadata": {
+                    **(chunk.get("metadata") or {}),
+                    "chunk_index": chunk["chunk_index"],
+                    "score": chunk["score"],
+                },
+            }
+            for chunk in retrieved_chunks
+        ]
+
+        for start in range(0, len(answer), chunk_size):
+            delta = answer[start:start + chunk_size]
+            yield {
+                "type": "chunk",
+                "delta": delta,
+            }
+
+        yield {
+            "type": "done",
             "answer": answer,
             "sources": sources,
         }

@@ -1,16 +1,14 @@
 import asyncio
+import json
 
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
 from app.core.config import settings
 from app.models.users import User
-from app.schemas.message import (
-    AssistantAnswerResponse,
-    MessageCreateRequest,
-    MessageResponse,
-)
+from app.schemas.message import MessageCreateRequest, MessageResponse
 from app.services.message_service import MessageService
 from app.services.rag_service import RAGService
 
@@ -37,7 +35,6 @@ async def list_messages(
 
 @router.post(
     "/chats/{chat_id}/messages",
-    response_model=AssistantAnswerResponse,
     status_code=status.HTTP_200_OK,
 )
 async def send_message(
@@ -46,8 +43,8 @@ async def send_message(
     payload: MessageCreateRequest,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
-) -> AssistantAnswerResponse:
-    # 1) Save user's message
+):
+    # 1) Save user's message first
     await MessageService.create_user_message(
         db=db,
         chat_id=chat_id,
@@ -55,46 +52,101 @@ async def send_message(
         content=payload.content,
     )
 
-    # 2) Artificial delay so frontend can show "Thinking..."
-    await asyncio.sleep(3)
+    # 2) Small artificial delay so frontend can show thinking state
+    await asyncio.sleep(1)
 
-    # Best-effort early exit if client already disconnected
+    # If client already disconnected, send a minimal stopped stream
     if await request.is_disconnected():
-        return AssistantAnswerResponse(answer="", sources=[])
+        async def disconnected_stream():
+            yield json.dumps({"type": "stopped"}) + "\n"
 
-    # 3) Local dev static response mode
-    if settings.ENABLE_STATIC_CHAT_RESPONSES:
-        assistant_text = (
-            f"{settings.STATIC_CHAT_RESPONSE_TEXT}\n\n"
-            f"Question received: {payload.content}"
+        return StreamingResponse(
+            disconnected_stream(),
+            media_type="application/x-ndjson",
         )
+
+    async def event_stream():
+        # Static/dev mode path
+        if settings.ENABLE_STATIC_CHAT_RESPONSES:
+            assistant_text = (
+                f"{settings.STATIC_CHAT_RESPONSE_TEXT}\n\n"
+                f"Question received: {payload.content}"
+            )
+            sources = []
+
+            chunk_size = 40
+            for start in range(0, len(assistant_text), chunk_size):
+                if await request.is_disconnected():
+                    yield json.dumps({"type": "stopped"}) + "\n"
+                    return
+
+                delta = assistant_text[start:start + chunk_size]
+
+                yield json.dumps(
+                    {
+                        "type": "chunk",
+                        "delta": delta,
+                    }
+                ) + "\n"
+
+                await asyncio.sleep(0.03)
+
+            await MessageService.create_assistant_message(
+                db=db,
+                chat_id=chat_id,
+                user_id=current_user.id,
+                content=assistant_text,
+            )
+
+            yield json.dumps(
+                {
+                    "type": "done",
+                    "answer": assistant_text,
+                    "sources": sources,
+                }
+            ) + "\n"
+            return
+
+        # RAG streaming-friendly path
+        assistant_text = ""
         sources = []
-    else:
-        # 4) Real RAG flow
-        rag_result = await RAGService.answer_question(
+
+        async for event in RAGService.stream_answer_question(
             db=db,
             chat_id=chat_id,
             user_id=current_user.id,
             question=payload.content,
             top_k=5,
-        )
-        assistant_text = rag_result["answer"]
-        sources = rag_result["sources"]
+        ):
+            if await request.is_disconnected():
+                yield json.dumps({"type": "stopped"}) + "\n"
+                return
 
-    # Best-effort exit after RAG returns but before saving assistant reply
-    if await request.is_disconnected():
-        return AssistantAnswerResponse(answer="", sources=[])
+            if event["type"] == "chunk":
+                assistant_text += event["delta"]
+                yield json.dumps(event) + "\n"
+                await asyncio.sleep(0.03)
 
-    # 5) Save assistant message
-    await MessageService.create_assistant_message(
-        db=db,
-        chat_id=chat_id,
-        user_id=current_user.id,
-        content=assistant_text,
-    )
+            elif event["type"] == "done":
+                sources = event["sources"]
 
-    # 6) Return response
-    return AssistantAnswerResponse(
-        answer=assistant_text,
-        sources=sources,
+                await MessageService.create_assistant_message(
+                    db=db,
+                    chat_id=chat_id,
+                    user_id=current_user.id,
+                    content=assistant_text,
+                )
+
+                yield json.dumps(
+                    {
+                        "type": "done",
+                        "answer": assistant_text,
+                        "sources": sources,
+                    }
+                ) + "\n"
+                return
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
     )
