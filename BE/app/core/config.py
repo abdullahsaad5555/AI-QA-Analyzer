@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import List
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,20 +36,28 @@ class Settings(BaseSettings):
     SMTP_STARTTLS: bool = True
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:5173"]
+    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
     # File / chunking
     MAX_UPLOAD_SIZE_MB: int = 20
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
 
-    # AI / vector
+    # Embeddings / vector DB / local AI
+    EMBEDDING_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
+    EMBEDDING_DEVICE: str | None = None  # e.g. "cpu", "cuda", "mps"
+
+    VECTOR_DB_PROVIDER: Literal["chromadb", "faiss", "pgvector"] = "chromadb"
+    VECTOR_DB_PATH: str = "./data/vector_store"
+    VECTOR_DB_COLLECTION: str = "document_chunks"
+    VECTOR_DB_DIMENSION: int = 384
+
+    # Optional legacy / future external provider settings
     OPENAI_API_KEY: str | None = None
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-large"
-    VECTOR_DB_PROVIDER: str = "pgvector"
 
     # Local dev chatbot mode
-    ENABLE_STATIC_CHAT_RESPONSES: bool = True
+    ENABLE_STATIC_CHAT_RESPONSES: bool = False
     STATIC_CHAT_RESPONSE_TEXT: str = (
         "This is a local development placeholder response. "
         "Your question was received successfully, but RAG/LLM generation is "
@@ -66,7 +74,15 @@ class Settings(BaseSettings):
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, value):
+        """
+        Accept either:
+        - a comma-separated string: "http://localhost:5173,http://127.0.0.1:5173"
+        - a list[str]
+        """
         if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return []
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 

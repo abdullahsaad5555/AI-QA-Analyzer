@@ -1,82 +1,160 @@
 # app/services/embedding_service.py
 
-import hashlib
+import asyncio
 from typing import Iterable
+
+from sentence_transformers import SentenceTransformer
 
 from app.core.config import settings
 
 
 class EmbeddingService:
     """
-    MVP embedding service.
+    Real local embedding service using Sentence Transformers.
 
-    For now, this generates deterministic pseudo-embeddings from text using SHA-256.
-    This is NOT a semantic embedding model, but it is useful for:
-    - local development
-    - testing ingestion pipelines
-    - validating DB/vector storage flow
+    Recommended for your setup:
+    - Embedding model: sentence-transformers/all-MiniLM-L6-v2
+    - Retrieval pattern: short query -> longer document chunks
+    - Vector DB: ChromaDB / FAISS (handled elsewhere)
 
-    Later, replace `embed_text()` with a real provider call.
+    Notes:
+    - The model is loaded lazily once and reused.
+    - Encoding is run in a worker thread because SentenceTransformer.encode(...)
+      is synchronous/blocking.
+    - Embeddings are normalized for cosine-similarity retrieval.
     """
 
-    DEFAULT_DIMENSION = 32
+    DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+    DEFAULT_EMBEDDING_PROVIDER = "sentence-transformers"
+
+    _model: SentenceTransformer | None = None
 
     @staticmethod
-    def _hash_to_vector(text: str, dimension: int = DEFAULT_DIMENSION) -> list[float]:
+    def _get_model_name() -> str:
         """
-        Convert text into a deterministic pseudo-vector using repeated SHA-256 hashing.
-        Output values are normalized to floats between 0 and 1.
+        Pull model name from settings if available, otherwise use default.
         """
-        if not text:
+        return getattr(
+            settings,
+            "EMBEDDING_MODEL_NAME",
+            EmbeddingService.DEFAULT_MODEL_NAME,
+        )
+
+    @staticmethod
+    def _get_device() -> str | None:
+        """
+        Optional device override from settings.
+        Example values: "cpu", "cuda", "mps"
+        """
+        return getattr(settings, "EMBEDDING_DEVICE", None)
+
+    @staticmethod
+    def _get_model() -> SentenceTransformer:
+        """
+        Lazy singleton loader for the embedding model.
+        """
+        if EmbeddingService._model is None:
+            model_name = EmbeddingService._get_model_name()
+            device = EmbeddingService._get_device()
+
+            if device:
+                EmbeddingService._model = SentenceTransformer(
+                    model_name,
+                    device=device,
+                )
+            else:
+                EmbeddingService._model = SentenceTransformer(model_name)
+
+        return EmbeddingService._model
+
+    @staticmethod
+    def _safe_to_list(embedding) -> list[float]:
+        """
+        Convert numpy array / tensor-like / list to a plain Python list[float].
+        """
+        if hasattr(embedding, "tolist"):
+            return embedding.tolist()
+        return [float(x) for x in embedding]
+
+    @staticmethod
+    async def embed_text(text: str) -> list[float]:
+        """
+        Embed a single text item as a query.
+
+        Uses encode_query() when available for asymmetric retrieval setups,
+        otherwise falls back to encode().
+        """
+        model = EmbeddingService._get_model()
+
+        if not text or not text.strip():
+            dimension = model.get_sentence_embedding_dimension()
             return [0.0] * dimension
 
-        values: list[float] = []
-        seed = text.encode("utf-8")
+        cleaned = text.strip()
 
-        while len(values) < dimension:
-            digest = hashlib.sha256(seed).digest()
+        def _encode() -> list[float]:
+            if hasattr(model, "encode_query"):
+                embedding = model.encode_query(
+                    cleaned,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                )
+            else:
+                embedding = model.encode(
+                    cleaned,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                )
 
-            # Convert digest bytes into normalized floats
-            for byte in digest:
-                values.append(byte / 255.0)
-                if len(values) >= dimension:
-                    break
+            return EmbeddingService._safe_to_list(embedding)
 
-            seed = digest
-
-        return values[:dimension]
-
-    @staticmethod
-    async def embed_text(text: str, dimension: int | None = None) -> list[float]:
-        """
-        Generate an embedding vector for a single text input.
-
-        This currently returns a deterministic pseudo-embedding.
-        """
-        dim = dimension or EmbeddingService.DEFAULT_DIMENSION
-        return EmbeddingService._hash_to_vector(text=text, dimension=dim)
+        return await asyncio.to_thread(_encode)
 
     @staticmethod
-    async def embed_texts(
-        texts: Iterable[str],
-        dimension: int | None = None,
-    ) -> list[list[float]]:
+    async def embed_texts(texts: Iterable[str]) -> list[list[float]]:
         """
-        Generate embedding vectors for multiple text inputs.
+        Embed multiple text items as document/corpus entries.
+
+        Uses encode_document() when available for asymmetric retrieval setups,
+        otherwise falls back to encode().
         """
-        dim = dimension or EmbeddingService.DEFAULT_DIMENSION
-        return [
-            EmbeddingService._hash_to_vector(text=text, dimension=dim)
-            for text in texts
-        ]
+        text_list = [text.strip() for text in texts if text and text.strip()]
+
+        if not text_list:
+            return []
+
+        model = EmbeddingService._get_model()
+
+        def _encode_many() -> list[list[float]]:
+            if hasattr(model, "encode_document"):
+                embeddings = model.encode_document(
+                    text_list,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                )
+            else:
+                embeddings = model.encode(
+                    text_list,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                )
+
+            return [
+                EmbeddingService._safe_to_list(embedding)
+                for embedding in embeddings
+            ]
+
+        return await asyncio.to_thread(_encode_many)
 
     @staticmethod
-    async def embed_chunks(
-        chunks: list[dict],
-        dimension: int | None = None,
-    ) -> list[dict]:
+    async def embed_chunks(chunks: list[dict]) -> list[dict]:
         """
-        Accepts a list of chunk dictionaries and returns the same list enriched with embeddings.
+        Accepts a list of chunk dictionaries and returns the same list enriched
+        with embeddings.
 
         Expected chunk format:
         [
@@ -88,18 +166,26 @@ class EmbeddingService:
             }
         ]
         """
-        dim = dimension or EmbeddingService.DEFAULT_DIMENSION
+        if not chunks:
+            return []
+
+        contents = [chunk.get("content", "") for chunk in chunks]
+        embeddings = await EmbeddingService.embed_texts(contents)
+
+        model = EmbeddingService._get_model()
+        model_name = EmbeddingService._get_model_name()
+        dimension = model.get_sentence_embedding_dimension()
+
         enriched_chunks: list[dict] = []
 
-        for chunk in chunks:
-            content = chunk.get("content", "")
-            embedding = EmbeddingService._hash_to_vector(content, dimension=dim)
-
+        for chunk, embedding in zip(chunks, embeddings):
             enriched_chunk = {
                 **chunk,
                 "embedding": embedding,
-                "embedding_dimension": dim,
-                "embedding_provider": settings.VECTOR_DB_PROVIDER,
+                "embedding_dimension": dimension,
+                "embedding_provider": EmbeddingService.DEFAULT_EMBEDDING_PROVIDER,
+                "embedding_model": model_name,
+                "vector_db_provider": getattr(settings, "VECTOR_DB_PROVIDER", None),
             }
             enriched_chunks.append(enriched_chunk)
 

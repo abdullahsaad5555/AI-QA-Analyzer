@@ -1,6 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const AuthContext = createContext(null);
+const MIN_LOGOUT_VISIBLE_MS = 850;
+
+function sleep(ms) {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, ms);
+    });
+}
 
 export function AuthProvider({ children }) {
     const [token, setToken] = useState(localStorage.getItem("access_token"));
@@ -31,9 +38,15 @@ export function AuthProvider({ children }) {
         setUser(nextUser);
     };
 
-    const logout = () => {
+    const logout = async () => {
+        await sleep(MIN_LOGOUT_VISIBLE_MS);
+
         setToken(null);
         setUser(null);
+
+        if (window.location.pathname !== "/login") {
+            window.location.replace("/login");
+        }
     };
 
     useEffect(() => {
